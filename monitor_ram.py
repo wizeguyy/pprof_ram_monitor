@@ -8,9 +8,9 @@ import argparse
 from datetime import datetime
 
 # Global variables
-DEFAULT_EWMA_ALPHA = 0.25   # Default alpha value for EWMA filter
+DEFAULT_EWMA_ALPHA = 0.1   # Default alpha value for EWMA filter
 DEFAULT_INTERVAL_SEC = 1    # Time interval in seconds between each RAM usage check
-RAM_USAGE_SENSITIVITY = 0.5  # Relative change in RAM usage to trigger pprof capture
+RAM_USAGE_SENSITIVITY = 0.8  # Relative change in RAM usage to trigger pprof capture
 
 
 def get_cli_args():
