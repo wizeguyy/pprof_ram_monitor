@@ -8,9 +8,9 @@ import argparse
 from datetime import datetime
 
 # Global variables
-DEFAULT_EWMA_ALPHA = 0.1   # Default alpha value for EWMA filter
-DEFAULT_INTERVAL_SEC = 1    # Time interval in seconds between each RAM usage check
-RAM_USAGE_SENSITIVITY = 0.8  # Relative change in RAM usage to trigger pprof capture
+DEFAULT_EWMA_ALPHA = 0.1        # Default alpha value for EWMA filter
+DEFAULT_INTERVAL_SEC = 1        # Time interval in seconds between each RAM usage check
+DEFAULT_TRIGGER_LEVEL_MB = 1024 # Relative increase in RAM usage to trigger a pprof capture (in megabytes)
 
 
 def get_cli_args():
@@ -22,8 +22,9 @@ def get_cli_args():
                         help='Alpha factor for the EWMA filter (value between 0 and 1)')
     parser.add_argument('--interval', type=int, default=DEFAULT_INTERVAL_SEC,
                         help='Delay between RAM monitor checks')
+    parser.add_argument('--trigger', type=int, default=DEFAULT_TRIGGER_LEVEL_MB,
+                        help='Relative change in RAM usage to trigger a pprof capture (in megabytes)')
     return parser.parse_args()
-
 
 def capture_pprof(url, capture_name):
     pprof_requests = [
@@ -60,8 +61,9 @@ def main():
     args = get_cli_args()
 
     # Capture baseline pprof
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    capture_pprof(args.pprof_host, "initial@"+timestamp)
+    curr = psutil.virtual_memory().used
+    starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    capture_pprof(args.pprof_host, f"{starttime}/initial_{int(curr/1024/1024)}MB")
 
     # Initialize EWMA filter for ram usage
     avg_ram_usage = Ewma(args.ewma_alpha, psutil.virtual_memory().used)
@@ -70,7 +72,6 @@ def main():
     while True:
         # Get current RAM usage
         curr = psutil.virtual_memory().used
-        pprof_threshold = avg_ram_usage.val * (1 + RAM_USAGE_SENSITIVITY)
 
         # Update the EWMA
         avg_ram_usage.update(curr)
@@ -81,9 +82,12 @@ def main():
             f"({logtime}) RAM usage: current={format_bytes(curr)}, avg={format_bytes(avg_ram_usage.val)}")
 
         # Check for sudden spike in RAM usage
-        if curr > pprof_threshold:
+        trigger = 1024*1024*args.trigger
+        delta = curr-avg_ram_usage.val
+        if abs(delta) > trigger:
+            avg_ram_usage.reset(curr)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            capture_pprof(args.pprof_host, timestamp)
+            capture_pprof(args.pprof_host, f"{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
 
         # Sleep
         time.sleep(args.interval)
@@ -113,6 +117,10 @@ class Ewma:
     # Update the EWMA filter with a new data sample
     def update(self, new_sample):
         self.val = (1-self.alpha)*self.val + self.alpha*new_sample
+
+    # Reset the average to a given value
+    def reset(self, val):
+        self.val = val
 
 
 if __name__ == '__main__':
