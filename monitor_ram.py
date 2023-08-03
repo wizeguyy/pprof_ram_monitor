@@ -90,8 +90,8 @@ def process():
     # Capture baseline pprof
     curr = psutil.virtual_memory().used
     starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    capture_pprof(args.pprof_host,
-                  f"pprof_traces/{starttime}/initial_{int(curr/1024/1024)}MB")
+    # capture_pprof(args.pprof_host,
+    #              f"pprof_traces/{starttime}/initial_{int(curr/1024/1024)}MB")
     capture_processes(
         f"pprof_traces/{starttime}/initial_{int(curr/1024/1024)}MB")
 
@@ -117,8 +117,8 @@ def process():
         if abs(delta) > trigger:
             avg_ram_usage.reset(curr)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            capture_pprof(args.pprof_host,
-                          f"pprof_traces/{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
+            # capture_pprof(args.pprof_host,
+            #              f"pprof_traces/{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
             capture_processes(
                 f"pprof_traces/{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
 
