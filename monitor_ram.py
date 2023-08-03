@@ -5,12 +5,14 @@ import psutil
 import requests
 import time
 import argparse
+import multiprocessing
 from datetime import datetime
 
-# Global variables
 DEFAULT_EWMA_ALPHA = 0.1        # Default alpha value for EWMA filter
-DEFAULT_INTERVAL_SEC = 1        # Time interval in seconds between each RAM usage check
-DEFAULT_TRIGGER_LEVEL_MB = 1024 # Relative increase in RAM usage to trigger a pprof capture (in megabytes)
+# Time interval in seconds between each RAM usage check
+DEFAULT_INTERVAL_SEC = 1
+# Relative increase in RAM usage to trigger a pprof capture (in megabytes)
+DEFAULT_TRIGGER_LEVEL_MB = 1024
 
 
 def get_cli_args():
@@ -26,7 +28,9 @@ def get_cli_args():
                         help='Relative change in RAM usage to trigger a pprof capture (in megabytes)')
     return parser.parse_args()
 
-def capture_pprof(url, capture_name):
+
+# Capture pprof profiles from the given server
+def capture_pprof(url, outdir):
     pprof_requests = [
         '/debug/pprof/heap',
         '/debug/pprof/goroutine',
@@ -36,7 +40,6 @@ def capture_pprof(url, capture_name):
         '/debug/pprof/profile?seconds=5',
         '/debug/pprof/trace?seconds=5',
     ]
-    outdir = os.path.join("pprof_traces", capture_name)
     for request in pprof_requests:
         # Query the server for pprof data
         trace_name = os.path.basename(request)
@@ -56,14 +59,41 @@ def capture_pprof(url, capture_name):
             file.write(response.content)
 
 
-def main():
+# Capture the list of running processes
+def capture_processes(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    processes = []
+    for proc in psutil.process_iter(['pid', 'name', 'username']):
+        processes.append({
+            'name': proc.name(),
+            'memory': proc.memory_info().rss,
+        })
+    sorted_processes = sorted(
+        processes, key=lambda x: x['memory'], reverse=True)
+    outfile = os.path.join(outdir, f"process_top100.txt")
+    with open(outfile, "wb") as file:
+        for proc in sorted_processes[:100]:
+            file.write(
+                f"{format_bytes(proc['memory'])}, {proc['name']}\n".encode('utf-8'))
+
+
+# Log the text and optionally print to console
+def log(str):
+    print(str)
+
+
+# The primary task of this process
+def process():
     # Parse CLI args
     args = get_cli_args()
 
     # Capture baseline pprof
     curr = psutil.virtual_memory().used
     starttime = datetime.now().strftime("%Y%m%d_%H%M%S")
-    capture_pprof(args.pprof_host, f"{starttime}/initial_{int(curr/1024/1024)}MB")
+    capture_pprof(args.pprof_host,
+                  f"pprof_traces/{starttime}/initial_{int(curr/1024/1024)}MB")
+    capture_processes(
+        f"pprof_traces/{starttime}/initial_{int(curr/1024/1024)}MB")
 
     # Initialize EWMA filter for ram usage
     avg_ram_usage = Ewma(args.ewma_alpha, psutil.virtual_memory().used)
@@ -87,12 +117,20 @@ def main():
         if abs(delta) > trigger:
             avg_ram_usage.reset(curr)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            capture_pprof(args.pprof_host, f"{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
+            capture_pprof(args.pprof_host,
+                          f"pprof_traces/{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
+            capture_processes(
+                f"pprof_traces/{starttime}/{timestamp}_{int(curr/1024/1024)}MB")
 
         # Sleep
         time.sleep(args.interval)
 
-# Format number of bytes into a human readable value
+
+# Main function just kicks off the background process
+def main():
+    background_process = multiprocessing.Process(target=process)
+    background_process.start()
+    background_process.join()
 
 
 def format_bytes(bytes_num):
@@ -104,8 +142,6 @@ def format_bytes(bytes_num):
         unit_index += 1
 
     return f"{bytes_num:.2f} {units[unit_index]}"
-
-# EWMA class defines an exponentially-weighted moving average filter
 
 
 class Ewma:
