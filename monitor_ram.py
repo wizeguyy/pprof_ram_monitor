@@ -66,15 +66,31 @@ def capture_processes(outdir):
     for proc in psutil.process_iter(['pid', 'name', 'username']):
         processes.append({
             'name': proc.name(),
-            'memory': proc.memory_info().rss,
+            'rss': proc.memory_info().rss,
+            'vms': proc.memory_info().vms,
+            'shared': proc.memory_info().shared,
+            'text': proc.memory_info().text,
+            'lib': proc.memory_info().lib,
+            'data': proc.memory_info().data,
+            'dirty': proc.memory_info().dirty,
         })
     sorted_processes = sorted(
-        processes, key=lambda x: x['memory'], reverse=True)
-    outfile = os.path.join(outdir, f"process_top100.txt")
+        processes, key=lambda x: x['rss'], reverse=True)
+    outfile = os.path.join(outdir, "processes_top100.txt")
     with open(outfile, "wb") as file:
         for proc in sorted_processes[:100]:
             file.write(
-                f"{format_bytes(proc['memory'])}, {proc['name']}\n".encode('utf-8'))
+                "rss= {: >10},\tvms= {: >10},\tshared= {: >10},\ttext= {: >10},\tlib= {: >10},\tdata= {: >10},\tdirty= {: >10},\tname= {: >10}\n"
+                .format(
+                    format_bytes(proc['rss']),
+                    format_bytes(proc['vms']),
+                    format_bytes(proc['shared']),
+                    format_bytes(proc['text']),
+                    format_bytes(proc['lib']),
+                    format_bytes(proc['data']),
+                    format_bytes(proc['dirty']),
+                    proc['name'],)
+                .encode('utf-8'))
 
 
 # Log the text and optionally print to console
